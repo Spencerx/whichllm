@@ -149,8 +149,7 @@ uv tool install whichllm
 ### Homebrew
 
 ```bash
-brew tap Andyyyy64/whichllm
-brew install whichllm
+brew install andyyyy64/whichllm/whichllm
 ```
 
 ### pip
