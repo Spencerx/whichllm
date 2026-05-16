@@ -3,6 +3,7 @@
 import pytest
 from click.exceptions import Exit
 
+import whichllm.cli as cli_mod
 from whichllm.cli import (
     _auto_min_params_for_profile,
     _current_version,
@@ -11,6 +12,7 @@ from whichllm.cli import (
     _include_vision_candidates,
     _merge_model_eval_benchmarks,
     _pick_gguf_variant,
+    _resolve_ranked_gguf_for_run,
     _resolve_evidence_mode,
     _search_model,
     _validate_evidence,
@@ -280,6 +282,188 @@ def test_pick_gguf_variant_no_variants():
     assert result is None
 
 
+def test_resolve_ranked_synthetic_gguf_to_real_repo():
+    selected = ModelInfo(
+        id="Qwen/Qwen3.6-27B",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B",
+        parameter_count=27_000_000_000,
+        downloads=50_000,
+    )
+    real_gguf = ModelInfo(
+        id="unsloth/Qwen3.6-27B-GGUF",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B-GGUF",
+        parameter_count=27_000_000_000,
+        downloads=200_000,
+        base_model="Qwen/Qwen3.6-27B",
+        gguf_variants=[
+            GGUFVariant(
+                filename="Qwen3.6-27B-Q4_K_M.gguf",
+                quant_type="Q4_K_M",
+                file_size_bytes=16_000_000_000,
+            )
+        ],
+    )
+    synthetic = GGUFVariant(
+        filename="Qwen3.6-27B.Q4_K_M.gguf",
+        quant_type="Q4_K_M",
+        file_size_bytes=16_000_000_000,
+    )
+
+    resolved = _resolve_ranked_gguf_for_run(selected, synthetic, [selected, real_gguf])
+
+    assert resolved is not None
+    model, variant = resolved
+    assert model.id == "unsloth/Qwen3.6-27B-GGUF"
+    assert variant.filename == "Qwen3.6-27B-Q4_K_M.gguf"
+
+
+def test_resolve_ranked_synthetic_gguf_prefers_exact_quant():
+    selected = ModelInfo(
+        id="Qwen/Qwen3.6-27B",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B",
+        parameter_count=27_000_000_000,
+    )
+    q5_only = ModelInfo(
+        id="converter/Qwen3.6-27B-GGUF",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B-GGUF",
+        parameter_count=27_000_000_000,
+        downloads=1_000_000,
+        gguf_variants=[
+            GGUFVariant(
+                filename="q5.gguf",
+                quant_type="Q5_K_M",
+                file_size_bytes=18_000_000_000,
+            )
+        ],
+    )
+    q4_match = ModelInfo(
+        id="smaller/Qwen3.6-27B-GGUF",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B-GGUF",
+        parameter_count=27_000_000_000,
+        downloads=10,
+        gguf_variants=[
+            GGUFVariant(
+                filename="q4.gguf",
+                quant_type="Q4_K_M",
+                file_size_bytes=16_000_000_000,
+            )
+        ],
+    )
+    synthetic = GGUFVariant(
+        filename="Qwen3.6-27B.Q4_K_M.gguf",
+        quant_type="Q4_K_M",
+        file_size_bytes=16_000_000_000,
+    )
+
+    resolved = _resolve_ranked_gguf_for_run(
+        selected,
+        synthetic,
+        [selected, q5_only, q4_match],
+    )
+
+    assert resolved is not None
+    model, variant = resolved
+    assert model.id == "smaller/Qwen3.6-27B-GGUF"
+    assert variant.quant_type == "Q4_K_M"
+
+
+def test_resolve_ranked_synthetic_gguf_rejects_quant_mismatch():
+    selected = ModelInfo(
+        id="Qwen/Qwen3.6-27B",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B",
+        parameter_count=27_000_000_000,
+    )
+    q5_only = ModelInfo(
+        id="converter/Qwen3.6-27B-GGUF",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B-GGUF",
+        parameter_count=27_000_000_000,
+        downloads=1_000_000,
+        gguf_variants=[
+            GGUFVariant(
+                filename="q5.gguf",
+                quant_type="Q5_K_M",
+                file_size_bytes=18_000_000_000,
+            )
+        ],
+    )
+    synthetic = GGUFVariant(
+        filename="Qwen3.6-27B.Q4_K_M.gguf",
+        quant_type="Q4_K_M",
+        file_size_bytes=16_000_000_000,
+    )
+
+    resolved = _resolve_ranked_gguf_for_run(selected, synthetic, [selected, q5_only])
+
+    assert resolved is None
+
+
+def test_resolve_ranked_synthetic_gguf_without_real_repo_returns_none():
+    selected = ModelInfo(
+        id="Qwen/Qwen3.6-27B",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B",
+        parameter_count=27_000_000_000,
+    )
+    unrelated = ModelInfo(
+        id="other/Model-7B-GGUF",
+        family_id="model-7b",
+        name="Model-7B-GGUF",
+        parameter_count=7_000_000_000,
+        gguf_variants=[
+            GGUFVariant(
+                filename="other.gguf",
+                quant_type="Q4_K_M",
+                file_size_bytes=4_000_000_000,
+            )
+        ],
+    )
+    synthetic = GGUFVariant(
+        filename="Qwen3.6-27B.Q4_K_M.gguf",
+        quant_type="Q4_K_M",
+        file_size_bytes=16_000_000_000,
+    )
+
+    assert _resolve_ranked_gguf_for_run(selected, synthetic, [selected, unrelated]) is None
+
+
+def test_resolve_ranked_synthetic_gguf_rejects_size_mismatch():
+    selected = ModelInfo(
+        id="deepseek-ai/DeepSeek-V4-Flash",
+        family_id="deepseek-v4-flash",
+        name="DeepSeek-V4-Flash",
+        parameter_count=158_000_000_000,
+    )
+    mtp_head = ModelInfo(
+        id="converter/deepseek-v4-flash-mtp-gguf",
+        family_id="deepseek-v4-flash",
+        name="DeepSeek-V4-Flash-MTP-GGUF",
+        parameter_count=6_600_000_000,
+        gguf_variants=[
+            GGUFVariant(
+                filename="mtp.gguf",
+                quant_type="Q4_K_M",
+                file_size_bytes=4_000_000_000,
+            )
+        ],
+    )
+    synthetic = GGUFVariant(
+        filename="DeepSeek-V4-Flash.Q4_K_M.gguf",
+        quant_type="Q4_K_M",
+        file_size_bytes=90_000_000_000,
+    )
+
+    resolved = _resolve_ranked_gguf_for_run(selected, synthetic, [selected, mtp_head])
+
+    assert resolved is None
+
+
 # --------------- run/snippet command tests ---------------
 
 
@@ -304,6 +488,79 @@ def test_transformers_chat_script_passes_tokenizer_mapping_to_generate():
     assert "return_dict=True" in script
     assert "kwargs=dict(**inputs, max_new_tokens=512, streamer=streamer)" in script
     assert "kwargs=dict(input_ids=inputs" not in script
+
+
+def test_run_auto_pick_resolves_ranked_gguf_before_launch(monkeypatch):
+    selected = ModelInfo(
+        id="Qwen/Qwen3.6-27B",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B",
+        parameter_count=27_000_000_000,
+        downloads=50_000,
+    )
+    real_gguf = ModelInfo(
+        id="unsloth/Qwen3.6-27B-GGUF",
+        family_id="qwen3-27b",
+        name="Qwen3.6-27B-GGUF",
+        parameter_count=27_000_000_000,
+        downloads=200_000,
+        base_model="Qwen/Qwen3.6-27B",
+        gguf_variants=[
+            GGUFVariant(
+                filename="q4.gguf",
+                quant_type="Q4_K_M",
+                file_size_bytes=16_000_000_000,
+            )
+        ],
+    )
+    synthetic = GGUFVariant(
+        filename="Qwen3.6-27B.Q4_K_M.gguf",
+        quant_type="Q4_K_M",
+        file_size_bytes=16_000_000_000,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_rank_models(models, hardware, **kwargs):
+        captured["quant_filter"] = kwargs.get("quant_filter")
+        return [
+            CompatibilityResult(
+                model=selected,
+                gguf_variant=synthetic,
+                can_run=True,
+                vram_required_bytes=0,
+                vram_available_bytes=0,
+                quality_score=90.0,
+            )
+        ]
+
+    def fake_generate_chat_script(model, variant, context_length, cpu_only):
+        captured["model_id"] = model.id
+        captured["variant"] = variant
+        return "print('ok')"
+
+    class Completed:
+        returncode = 0
+
+    def fake_run(cmd):
+        captured["cmd"] = cmd
+        return Completed()
+
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/uv")
+    monkeypatch.setattr(cli_mod, "_load_models", lambda refresh: [selected, real_gguf])
+    monkeypatch.setattr("whichllm.hardware.detector.detect_hardware", lambda: _hw_with_gpu(8))
+    monkeypatch.setattr("whichllm.models.benchmark.load_benchmark_cache", lambda: {})
+    monkeypatch.setattr("whichllm.engine.ranker.rank_models", fake_rank_models)
+    monkeypatch.setattr(cli_mod, "_generate_chat_script", fake_generate_chat_script)
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    result = CliRunner().invoke(app, ["run", "--quant", "Q4_K_M"])
+
+    assert result.exit_code == 0
+    assert captured["quant_filter"] == "Q4_K_M"
+    assert captured["model_id"] == "unsloth/Qwen3.6-27B-GGUF"
+    assert captured["variant"].filename == "q4.gguf"
+    assert "llama-cpp-python" in captured["cmd"]
+    assert "transformers" not in captured["cmd"]
 
 
 def test_snippet_no_model_found():
