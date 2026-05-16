@@ -4,6 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://github.com/Andyyyy64/whichllm/actions/workflows/test.yml/badge.svg)](https://github.com/Andyyyy64/whichllm/actions/workflows/test.yml)
+[![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Andyyyy64)
 
 **Find the best local LLM that actually runs on your hardware.**
 
@@ -336,6 +337,15 @@ src/whichllm/
 ## Contributing
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Support
+
+If whichllm helped you find a model or avoid a bad hardware guess,
+sponsoring is appreciated. It helps keep the project maintained: hardware
+reports, packaging, test fixtures, benchmark updates, and support for more
+machines.
+
+whichllm will stay open-source either way. Issues and PRs are always welcome.
 
 ## Requirements
 
