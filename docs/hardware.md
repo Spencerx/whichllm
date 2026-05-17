@@ -150,6 +150,10 @@ whichllm reserves about 20% of system RAM for the OS and other processes.
 For fit checks, whichllm sums available GPU memory. For speed estimates, it uses
 the largest detected GPU as the representative device.
 
+If a dedicated GPU is present, low-aperture shared-memory integrated GPUs are
+not added to the fit pool. This avoids treating unrelated system RAM and
+dedicated VRAM as one full-GPU target.
+
 This is a practical approximation. It does not model every tensor-parallel or
 pipeline-parallel runtime configuration.
 
