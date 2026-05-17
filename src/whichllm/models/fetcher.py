@@ -120,6 +120,23 @@ def _extract_size_hint_from_id(model_id: str | None) -> int | None:
     return int(max_b * 1e9)
 
 
+def _extract_active_size_hint_from_id(model_id: str | None) -> int | None:
+    """Extract MoE active parameter hint from names like 35B-A3B."""
+    if not model_id:
+        return None
+    lower = model_id.lower()
+    matches = re.findall(r"\d+(?:\.\d+)?b[-_]?a(\d+(?:\.\d+)?)b", lower)
+    if not matches:
+        return None
+    try:
+        max_b = max(float(m) for m in matches)
+    except ValueError:
+        return None
+    if max_b <= 0:
+        return None
+    return int(max_b * 1e9)
+
+
 def _is_quantized_repo_name(model_id: str) -> bool:
     """Detect quantized/non-base repository naming patterns."""
     lower = model_id.lower()
@@ -135,6 +152,25 @@ def _lookup_curated_count(mapping: dict[str, int], model_id: str) -> int | None:
     for key, value in mapping.items():
         if key.casefold() == model_id_folded:
             return value
+    return None
+
+
+def _resolve_moe_active_params(
+    total_params: int,
+    *model_refs: str | None,
+) -> int | None:
+    """Resolve active params from curated data or A*B naming hints."""
+    for ref in model_refs:
+        if not ref:
+            continue
+        active = _lookup_curated_count(_KNOWN_MOE_ACTIVE_PARAMS, ref)
+        if active and active > 0:
+            return active
+
+    for ref in model_refs:
+        active = _extract_active_size_hint_from_id(ref)
+        if active and active > 0 and (total_params <= 0 or active < total_params):
+            return active
     return None
 
 
@@ -447,10 +483,10 @@ def _parse_model(data: dict) -> ModelInfo | None:
         if isinstance(v, int) and v > experts_per_tok:
             experts_per_tok = v
 
-    # Known-frontier MoE registry: when HF config lacks expert metadata, fall
-    # back to a curated lookup. The total/active values come from each model's
-    # release card.
-    known_moe_active = _lookup_curated_count(_KNOWN_MOE_ACTIVE_PARAMS, model_id)
+    # Known-frontier MoE registry and A*B naming hints: when HF config lacks
+    # expert metadata, fall back to release-card counts or model IDs such as
+    # Qwen3.6-35B-A3B. The A3B suffix means 3B active params per token.
+    known_moe_active = _resolve_moe_active_params(param_count, model_id, base_model)
     is_moe = num_experts > 0 or known_moe_active is not None
     active_params = None
     if is_moe:
@@ -845,7 +881,13 @@ def dicts_to_models(data: list[dict]) -> list[ModelInfo]:
             d["id"],
             base_model,
         )
-        active_params = _lookup_curated_count(_KNOWN_MOE_ACTIVE_PARAMS, d["id"])
+        active_params = _resolve_moe_active_params(
+            param_count,
+            d["id"],
+            base_model,
+            d.get("name"),
+            d.get("architecture"),
+        )
         if active_params is None:
             active_params = d.get("parameter_count_active")
         models.append(

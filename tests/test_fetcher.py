@@ -103,6 +103,53 @@ def test_dicts_to_models_uses_case_insensitive_curated_active_params():
     assert models[0].is_moe is True
 
 
+def test_dicts_to_models_recovers_a3b_active_params_from_cached_qwen_model():
+    models = dicts_to_models(
+        [
+            {
+                "id": "Qwen/Qwen3.6-35B-A3B",
+                "family_id": "qwen3.6-35b-a3b",
+                "name": "Qwen3.6-35B-A3B",
+                "parameter_count": 35_951_822_704,
+                "parameter_count_active": None,
+                "architecture": "qwen3_5moe",
+                "downloads": 1,
+                "likes": 1,
+                "gguf_variants": [],
+                "benchmark_scores": {},
+            }
+        ]
+    )
+
+    assert len(models) == 1
+    assert models[0].parameter_count_active == 3_000_000_000
+    assert models[0].is_moe is True
+
+
+def test_dicts_to_models_recovers_a3b_active_params_from_base_model():
+    models = dicts_to_models(
+        [
+            {
+                "id": "local/Qwen36-GGUF",
+                "family_id": "qwen36-gguf",
+                "name": "Qwen36-GGUF",
+                "parameter_count": 34_660_610_688,
+                "parameter_count_active": None,
+                "architecture": "qwen35moe",
+                "downloads": 1,
+                "likes": 1,
+                "gguf_variants": [],
+                "benchmark_scores": {},
+                "base_model": "Qwen/Qwen3.6-35B-A3B",
+            }
+        ]
+    )
+
+    assert len(models) == 1
+    assert models[0].parameter_count_active == 3_000_000_000
+    assert models[0].is_moe is True
+
+
 def test_dicts_to_models_refreshes_stale_xiaomi_moe_cache_counts():
     models = dicts_to_models(
         [
@@ -173,6 +220,26 @@ def test_parse_model_uses_current_glm5_and_xiaomi_active_counts():
     assert glm.parameter_count_active == 40_000_000_000
     assert mimo is not None
     assert mimo.parameter_count_active == 15_000_000_000
+
+
+def test_parse_model_recovers_qwen36_a3b_active_params_from_name():
+    parsed = _parse_model(
+        {
+            "id": "Qwen/Qwen3.6-35B-A3B",
+            "config": {
+                "architectures": ["Qwen3_5MoeForConditionalGeneration"],
+                "model_type": "qwen3_5_moe",
+            },
+            "safetensors": {"total": 35_951_822_704},
+            "siblings": [],
+            "cardData": {},
+        }
+    )
+
+    assert parsed is not None
+    assert parsed.parameter_count == 35_951_822_704
+    assert parsed.parameter_count_active == 3_000_000_000
+    assert parsed.is_moe is True
 
 
 def test_models_cache_roundtrip_keeps_published_at():
