@@ -83,6 +83,20 @@ GPU_BANDWIDTH: dict[str, float] = {
     "T4": 320.0,
     "V100": 900.0,
     "P100": 732.0,
+    # NVIDIA Kepler (legacy, Vulkan-only — no CUDA in modern llama.cpp).
+    # Values are theoretical peak memory bandwidth (GB/s) from NVIDIA
+    # datasheets. Kepler (compute capability 3.x) was dropped by CUDA 12 and
+    # current llama.cpp CUDA builds, so these cards run via the Vulkan backend
+    # on Linux. See VULKAN_ONLY_GPUS below.
+    "Quadro K6000": 288.0,
+    "Quadro K5200": 192.3,
+    "Quadro K4200": 173.0,
+    "Quadro K2200": 80.0,
+    "Quadro K620": 29.0,
+    "Quadro K420": 14.4,
+    "GTX 780": 288.4,
+    "GTX 770": 224.3,
+    "GTX 760": 192.2,
     # AMD
     "RX 9070 XT": 640.0,
     "RX 9070": 560.0,
@@ -182,4 +196,35 @@ NVIDIA_COMPUTE_CAPABILITY: dict[str, tuple[int, int]] = {
     "T4": (7, 5),
     "V100": (7, 0),
     "P100": (6, 0),
+    # Kepler series (compute capability 3.x) — legacy, Vulkan-only.
+    # CUDA 12 and current llama.cpp CUDA builds dropped Kepler support, so
+    # these cards only run through the Vulkan backend. See VULKAN_ONLY_GPUS.
+    "Quadro K6000": (3, 5),
+    "Quadro K5200": (3, 5),
+    "Quadro K4200": (3, 0),
+    "Quadro K2200": (3, 0),
+    "Quadro K620": (3, 0),
+    "Quadro K420": (3, 0),
+    "GTX 780": (3, 5),
+    "GTX 770": (3, 0),
+    "GTX 760": (3, 0),
 }
+
+# Legacy NVIDIA GPUs with no CUDA support in modern llama.cpp builds.
+# Kepler (compute capability 3.0/3.5) was removed in CUDA 12, so these cards
+# can only be used through the Vulkan backend (Linux) in current llama.cpp.
+# Entries are substrings matched case-insensitively against the GPU name, the
+# same convention used by GPU_BANDWIDTH and NVIDIA_COMPUTE_CAPABILITY.
+VULKAN_ONLY_GPUS: frozenset[str] = frozenset(
+    {
+        "Quadro K6000",
+        "Quadro K5200",
+        "Quadro K4200",
+        "Quadro K2200",
+        "Quadro K620",
+        "Quadro K420",
+        "GTX 780",
+        "GTX 770",
+        "GTX 760",
+    }
+)
