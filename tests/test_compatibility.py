@@ -1,5 +1,6 @@
 """Tests for compatibility checking."""
 
+from whichllm.constants import _GiB
 from whichllm.engine.compatibility import check_compatibility
 from whichllm.hardware.memory import estimate_usable_ram
 from whichllm.hardware.types import GPUInfo, HardwareInfo
@@ -158,6 +159,114 @@ def test_shared_memory_igpu_is_not_summed_with_dedicated_gpu():
     assert result.fit_type == "partial_offload"
     assert result.vram_available_bytes == 8 * 1024**3
     assert any("offloaded to CPU RAM" in w for w in result.warnings)
+
+
+def test_homogeneous_multi_gpu_uses_conservative_fit_budget():
+    model = _make_model(1_000_000_000)
+    variant = _make_variant(int(46 * _GiB))
+    hw = HardwareInfo(
+        gpus=[
+            GPUInfo(
+                name="NVIDIA GeForce RTX 4090",
+                vendor="nvidia",
+                vram_bytes=24 * _GiB,
+                compute_capability=(8, 9),
+                memory_bandwidth_gbps=1008.0,
+            ),
+            GPUInfo(
+                name="NVIDIA GeForce RTX 4090",
+                vendor="nvidia",
+                vram_bytes=24 * _GiB,
+                compute_capability=(8, 9),
+                memory_bandwidth_gbps=1008.0,
+            ),
+        ],
+        cpu_name="Test CPU",
+        cpu_cores=16,
+        ram_bytes=128 * _GiB,
+        disk_free_bytes=200 * _GiB,
+        os="linux",
+    )
+
+    result = check_compatibility(model, variant, hw)
+
+    assert result.can_run is True
+    assert result.fit_type == "partial_offload"
+    assert result.uses_multi_gpu is True
+    assert result.vram_available_bytes == 48 * _GiB
+    assert result.multi_gpu_effective_vram_bytes is not None
+    assert result.multi_gpu_effective_vram_bytes < result.vram_available_bytes
+    assert any("conservative layer-split budget" in w for w in result.warnings)
+
+
+def test_heterogeneous_multi_gpu_warns_about_split_assumptions():
+    model = _make_model()
+    variant = _make_variant(20 * _GiB)
+    hw = HardwareInfo(
+        gpus=[
+            GPUInfo(
+                name="NVIDIA GeForce RTX 4090",
+                vendor="nvidia",
+                vram_bytes=24 * _GiB,
+                compute_capability=(8, 9),
+                memory_bandwidth_gbps=1008.0,
+            ),
+            GPUInfo(
+                name="NVIDIA GeForce RTX 3060",
+                vendor="nvidia",
+                vram_bytes=12 * _GiB,
+                compute_capability=(8, 6),
+                memory_bandwidth_gbps=360.0,
+            ),
+        ],
+        cpu_name="Test CPU",
+        cpu_cores=16,
+        ram_bytes=64 * _GiB,
+        disk_free_bytes=200 * _GiB,
+        os="linux",
+    )
+
+    result = check_compatibility(model, variant, hw)
+
+    assert result.can_run is True
+    assert result.uses_multi_gpu is True
+    assert result.multi_gpu_effective_vram_bytes is not None
+    assert result.multi_gpu_effective_vram_bytes < 36 * _GiB
+    assert any("Heterogeneous multi-GPU" in w for w in result.warnings)
+
+
+def test_multiple_shared_memory_gpus_are_not_summed():
+    model = _make_model(120_000_000_000)
+    variant = _make_variant(70 * _GiB)
+    hw = HardwareInfo(
+        gpus=[
+            GPUInfo(
+                name="Integrated GPU A",
+                vendor="amd",
+                vram_bytes=0,
+                memory_bandwidth_gbps=120.0,
+                shared_memory=True,
+            ),
+            GPUInfo(
+                name="Integrated GPU B",
+                vendor="intel",
+                vram_bytes=0,
+                shared_memory=True,
+            ),
+        ],
+        cpu_name="Test CPU",
+        cpu_cores=16,
+        ram_bytes=64 * _GiB,
+        disk_free_bytes=200 * _GiB,
+        os="linux",
+    )
+
+    result = check_compatibility(model, variant, hw)
+
+    assert result.vram_available_bytes == estimate_usable_ram(hw.ram_bytes)
+    assert result.multi_gpu_effective_vram_bytes is None
+    assert result.fit_type == "cpu_only"
+    assert any("shared-memory GPUs are not pooled" in w for w in result.warnings)
 
 
 def test_apple_silicon_does_not_double_count_unified_memory():

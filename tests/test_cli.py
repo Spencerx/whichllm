@@ -7,6 +7,7 @@ from typer import Exit
 import whichllm.cli as cli_mod
 import whichllm.__main__ as main_mod
 from whichllm.cli import (
+    _apply_gpu_overrides,
     _auto_min_params_for_profile,
     _fill_missing_published_at,
     _format_fetch_error,
@@ -59,6 +60,16 @@ def test_auto_min_params_general_by_vram():
 
 def test_auto_min_params_non_general_disabled():
     assert _auto_min_params_for_profile(_hw_with_gpu(24), "coding") is None
+
+
+def test_apply_gpu_overrides_accepts_multiple_simulated_gpus():
+    hw = HardwareInfo(gpus=[], ram_bytes=64 * 1024**3, os="linux")
+
+    _apply_gpu_overrides(hw, cpu_only=False, gpu=["2x RTX 4090"], vram=None)
+
+    assert len(hw.gpus) == 2
+    assert all(gpu.vendor == "nvidia" for gpu in hw.gpus)
+    assert all(gpu.vram_bytes == 24 * 1024**3 for gpu in hw.gpus)
 
 
 def test_include_vision_candidates_by_profile():

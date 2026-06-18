@@ -12,6 +12,10 @@ from whichllm.hardware.memory import estimate_usable_ram
 from whichllm.hardware.types import GPUInfo, HardwareInfo
 from whichllm.models.types import GGUFVariant, ModelInfo
 
+_MULTI_GPU_FRAMEWORK_OVERHEAD_BYTES = int(0.3 * _GiB)
+_MULTI_GPU_HOMOGENEOUS_UTILIZATION = 0.95
+_MULTI_GPU_HETEROGENEOUS_UTILIZATION = 0.90
+
 
 def _gpu_available_memory(gpu: GPUInfo, usable_ram: int) -> int:
     if gpu.shared_memory and gpu.vram_bytes < 2 * _GiB:
@@ -46,6 +50,64 @@ def _fit_candidate_gpus(gpus: list[GPUInfo]) -> list[GPUInfo]:
     return [gpu for gpu in gpus if not _uses_shared_system_pool(gpu)]
 
 
+def _gpu_identity(gpu: GPUInfo) -> str:
+    name = gpu.name.lower().replace("(simulated)", "")
+    return " ".join(name.split())
+
+
+def _is_homogeneous_gpu_set(gpus: list[GPUInfo], available: list[int]) -> bool:
+    if not gpus:
+        return True
+    first = gpus[0]
+    first_identity = _gpu_identity(first)
+    first_available = available[0]
+    vram_tolerance = max(256 * 1024**2, int(first_available * 0.02))
+    return all(
+        gpu.vendor == first.vendor
+        and _gpu_identity(gpu) == first_identity
+        and abs(gpu_available - first_available) <= vram_tolerance
+        for gpu, gpu_available in zip(gpus, available, strict=True)
+    )
+
+
+def _multi_gpu_effective_vram(
+    gpus: list[GPUInfo],
+    available: list[int],
+    warnings: list[str],
+) -> tuple[int, bool, int | None]:
+    raw_total = sum(available)
+    if len(gpus) <= 1:
+        return raw_total, False, None
+
+    if any(gpu.shared_memory or gpu.vendor == "apple" for gpu in gpus):
+        effective = max(available)
+        warnings.append(
+            "Multiple shared-memory GPUs are not pooled; using the largest "
+            "reported memory pool for fit checks"
+        )
+        return effective, False, None
+
+    homogeneous = _is_homogeneous_gpu_set(gpus, available)
+    utilization = (
+        _MULTI_GPU_HOMOGENEOUS_UTILIZATION
+        if homogeneous
+        else _MULTI_GPU_HETEROGENEOUS_UTILIZATION
+    )
+    overhead = min(raw_total, len(gpus) * _MULTI_GPU_FRAMEWORK_OVERHEAD_BYTES)
+    effective = int((raw_total - overhead) * utilization)
+
+    warnings.append(
+        "Multi-GPU fit uses a conservative layer-split budget: "
+        f"{effective / _GiB:.1f} GB effective from {raw_total / _GiB:.1f} GB raw VRAM"
+    )
+    if not homogeneous:
+        warnings.append(
+            "Heterogeneous multi-GPU setup: fit assumes uneven layer placement; "
+            "speed depends on backend split mode and interconnect"
+        )
+    return effective, True, effective
+
+
 def check_compatibility(
     model: ModelInfo,
     variant: GGUFVariant | None,
@@ -62,16 +124,25 @@ def check_compatibility(
     # Determine best GPU
     best_gpu: GPUInfo | None = None
     best_gpu_available = 0
-    total_vram = 0
+    gpu_available_values: list[int] = []
     candidate_gpus = _fit_candidate_gpus(hardware.gpus)
     for gpu in candidate_gpus:
         gpu_available = _gpu_available_memory(gpu, usable_ram)
-        total_vram += gpu_available
+        gpu_available_values.append(gpu_available)
         if best_gpu is None or gpu_available > best_gpu_available:
             best_gpu = gpu
             best_gpu_available = gpu_available
 
-    vram_available = total_vram if total_vram > 0 else 0
+    vram_available = sum(gpu_available_values) if gpu_available_values else 0
+    fit_vram_available, uses_multi_gpu, multi_gpu_effective_vram = (
+        _multi_gpu_effective_vram(candidate_gpus, gpu_available_values, warnings)
+    )
+    if (
+        len(candidate_gpus) > 1
+        and not uses_multi_gpu
+        and any(gpu.shared_memory or gpu.vendor == "apple" for gpu in candidate_gpus)
+    ):
+        vram_available = fit_vram_available
     offload_ram_available = (
         0
         if best_gpu and (best_gpu.shared_memory or best_gpu.vendor == "apple")
@@ -108,17 +179,18 @@ def check_compatibility(
         warnings.append("Metal requires macOS for Apple Silicon inference")
 
     # Determine fit type
-    if vram_available >= vram_required:
+    if fit_vram_available >= vram_required:
         fit_type = "full_gpu"
         can_run = True
         offload_ratio = 0.0
     elif (
-        vram_available > 0 and (vram_available + offload_ram_available) >= vram_required
+        fit_vram_available > 0
+        and (fit_vram_available + offload_ram_available) >= vram_required
     ):
         fit_type = "partial_offload"
         can_run = True
         offload_ratio = (
-            (vram_required - vram_available) / vram_required
+            (vram_required - fit_vram_available) / vram_required
             if vram_required > 0
             else 0.0
         )
@@ -171,6 +243,8 @@ def check_compatibility(
         vram_required_bytes=vram_required,
         vram_available_bytes=vram_available,
         offload_ratio=offload_ratio,
+        uses_multi_gpu=uses_multi_gpu,
+        multi_gpu_effective_vram_bytes=multi_gpu_effective_vram,
         warnings=warnings,
         fit_type=fit_type,
         context_fits=context_fits,

@@ -24,3 +24,5 @@ class CompatibilityResult:
     benchmark_source: str = "none"  # granular: "direct" | "variant" | "base_model" | "line_interp" | "self_reported" | "none"
     benchmark_confidence: float = 0.0  # 0.0-1.0 from BenchmarkEvidence
     context_fits: bool = True  # False when known model max context < requested
+    uses_multi_gpu: bool = False
+    multi_gpu_effective_vram_bytes: int | None = None

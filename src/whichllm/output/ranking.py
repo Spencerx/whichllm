@@ -42,35 +42,42 @@ def _top_pick_confidence(results: list[CompatibilityResult]) -> tuple[str, str]:
     """Return confidence level and explanation for top pick."""
     top = results[0]
     gap = (top.quality_score - results[1].quality_score) if len(results) > 1 else 999.0
-    fit_note = ""
+    notes: list[str] = []
     if top.fit_type == "partial_offload":
-        fit_note = ", partial offload"
+        notes.append("partial offload")
     elif top.fit_type == "cpu_only":
-        fit_note = ", CPU-only"
+        notes.append("CPU-only")
+    if top.speed_confidence == "low":
+        notes.append("low-confidence speed")
+    risk_note = f", {', '.join(notes)}" if notes else ""
 
     if top.benchmark_status == "none":
-        return "Low", f"no benchmark data, gap +{gap:.1f}{fit_note}"
+        return "Low", f"no benchmark data, gap +{gap:.1f}{risk_note}"
     if top.benchmark_status == "self_reported":
         return (
             "Low",
-            f"uploader-reported benchmark only (unverified), gap +{gap:.1f}{fit_note}",
+            f"uploader-reported benchmark only (unverified), gap +{gap:.1f}{risk_note}",
         )
     if top.benchmark_status == "estimated":
         if gap >= 2.0:
-            return "Medium", f"estimated benchmark, gap +{gap:.1f}{fit_note}"
-        return "Low", f"estimated benchmark, gap +{gap:.1f}{fit_note}"
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+        if top.speed_confidence == "low" and confidence == "Medium":
+            confidence = "Low"
+        return confidence, f"estimated benchmark, gap +{gap:.1f}{risk_note}"
     if gap >= 2.5:
         confidence = "High"
-        reason = f"direct benchmark, gap +{gap:.1f}{fit_note}"
+        reason = f"direct benchmark, gap +{gap:.1f}{risk_note}"
     elif gap >= 1.0:
         confidence = "Medium"
-        reason = f"direct benchmark, gap +{gap:.1f}{fit_note}"
+        reason = f"direct benchmark, gap +{gap:.1f}{risk_note}"
     else:
         confidence = "Low"
-        reason = f"direct benchmark but very close (+{gap:.1f}){fit_note}"
+        reason = f"direct benchmark but very close (+{gap:.1f}){risk_note}"
 
-    # オフロード/CPU-onlyの1位は実運用で不確実性が高いため信頼度を1段階下げる
-    if top.fit_type != "full_gpu":
+    # オフロード/CPU-only/低信頼speedの1位は実運用で不確実性が高いため信頼度を1段階下げる
+    if top.fit_type != "full_gpu" or top.speed_confidence == "low":
         if confidence == "High":
             confidence = "Medium"
         elif confidence == "Medium":

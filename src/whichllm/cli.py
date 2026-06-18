@@ -53,7 +53,7 @@ def _print_version(value: bool) -> None:
 
 def _validate_gpu_flags(
     cpu_only: bool,
-    gpu: str | None,
+    gpu: list[str] | None,
     vram: float | None,
 ) -> None:
     """Validate mutual exclusivity of GPU-related flags."""
@@ -99,17 +99,17 @@ def _resolve_evidence_mode(evidence: str, direct: bool) -> str:
 def _apply_gpu_overrides(
     hardware: HardwareInfo,
     cpu_only: bool,
-    gpu: str | None,
+    gpu: list[str] | None,
     vram: float | None,
 ) -> HardwareInfo:
     """Replace hardware.gpus based on CLI flags."""
     if cpu_only:
         hardware.gpus = []
     elif gpu:
-        from whichllm.hardware.gpu_simulator import create_synthetic_gpu
+        from whichllm.hardware.gpu_simulator import create_synthetic_gpus
 
         try:
-            hardware.gpus = [create_synthetic_gpu(gpu, vram)]
+            hardware.gpus = create_synthetic_gpus(gpu, vram)
         except ValueError as e:
             console.print(f"[red]Error:[/] {e}")
             raise typer.Exit(code=1)
@@ -251,8 +251,10 @@ def main(
     cpu_only: bool = typer.Option(
         False, "--cpu-only", help="Ignore GPU and run in CPU-only mode"
     ),
-    gpu: Optional[str] = typer.Option(
-        None, "--gpu", help="Simulate a GPU (e.g. 'RTX 4090')"
+    gpu: Optional[list[str]] = typer.Option(
+        None,
+        "--gpu",
+        help="Simulate GPU(s), e.g. 'RTX 4090', '2x RTX 4090', or repeat --gpu",
     ),
     vram: Optional[float] = typer.Option(
         None, "--vram", help="Override VRAM in GB (requires --gpu)"
@@ -1101,8 +1103,10 @@ def hardware(
     cpu_only: bool = typer.Option(
         False, "--cpu-only", help="Ignore GPU and run in CPU-only mode"
     ),
-    gpu: Optional[str] = typer.Option(
-        None, "--gpu", help="Simulate a GPU (e.g. 'RTX 4090')"
+    gpu: Optional[list[str]] = typer.Option(
+        None,
+        "--gpu",
+        help="Simulate GPU(s), e.g. 'RTX 4090', '2x RTX 4090', or repeat --gpu",
     ),
     vram: Optional[float] = typer.Option(
         None, "--vram", help="Override VRAM in GB (requires --gpu)"

@@ -134,6 +134,19 @@ whichllm hardware --gpu "Unknown GPU" --vram 24
 
 `--vram` requires `--gpu`.
 
+Multi-GPU simulation accepts repeated flags, comma-separated values, and count
+shorthand:
+
+```bash
+whichllm --gpu "2x RTX 4090"
+whichllm --gpu "RTX 4090" --gpu "RTX 3090"
+whichllm --gpu "RTX 4090, RTX 3090"
+```
+
+`--vram` is only supported for a single simulated GPU. For multi-GPU
+simulation, use known GPU names so whichllm can resolve each card's VRAM from
+the GPU database.
+
 ## Fit types
 
 Compatibility checks classify a candidate into one of three fit types:
@@ -147,19 +160,26 @@ Compatibility checks classify a candidate into one of three fit types:
 If neither GPU memory nor usable RAM can hold the model, the candidate is not
 ranked.
 
-whichllm reserves about 20% of system RAM for the OS and other processes.
+whichllm keeps a bounded system-RAM reserve for the OS and other processes.
 
 ## Multiple GPUs
 
-For fit checks, whichllm sums available GPU memory. For speed estimates, it uses
-the largest detected GPU as the representative device.
+For fit checks, whichllm uses a conservative multi-GPU budget rather than
+pretending all VRAM is one perfect device. It starts from raw total VRAM, applies
+a small per-GPU overhead, and then applies a utilization factor. Homogeneous
+sets receive a less severe reduction than heterogeneous sets.
 
 If a dedicated GPU is present, low-aperture shared-memory integrated GPUs are
 not added to the fit pool. This avoids treating unrelated system RAM and
 dedicated VRAM as one full-GPU target.
 
-This is a practical approximation. It does not model every tensor-parallel or
-pipeline-parallel runtime configuration.
+For speed estimates, whichllm uses the largest detected GPU as the
+representative device and marks multi-GPU speed as low-confidence. This avoids
+claiming ideal scaling when real performance depends on backend split mode,
+PCIe/NVLink bandwidth, NCCL/RCCL support, batch size, and model architecture.
+
+This is a practical fit approximation. It does not model every tensor-parallel
+or pipeline-parallel runtime configuration.
 
 ## Disk checks
 

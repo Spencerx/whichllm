@@ -45,6 +45,9 @@ def display_json(results: list[CompatibilityResult], hardware: HardwareInfo) -> 
                     else estimate_weight_bytes(r.model, None)
                 ),
                 "vram_required_bytes": r.vram_required_bytes,
+                "vram_available_bytes": r.vram_available_bytes,
+                "uses_multi_gpu": r.uses_multi_gpu,
+                "multi_gpu_effective_vram_bytes": r.multi_gpu_effective_vram_bytes,
                 "estimated_tok_per_sec": r.estimated_tok_per_sec,
                 "speed_confidence": r.speed_confidence,
                 "speed_range_tok_per_sec": (

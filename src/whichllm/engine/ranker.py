@@ -33,6 +33,7 @@ _LINEAGE_REGEX: dict[str, list[tuple[re.Pattern[str], int]]] = {
 _LINEAGE_FAMILY_MAX: dict[str, int] = {
     family: max(idx for _, idx in entries) for family, entries in _LINEAGE_REGEX.items()
 }
+_MULTI_GPU_SPEED_FACTOR = 0.70
 
 
 def _family_selection_key(
@@ -755,6 +756,8 @@ def rank_models(
             tok_per_sec = estimate_tok_per_sec(
                 model, variant, best_gpu, compat.fit_type
             )
+            if compat.uses_multi_gpu:
+                tok_per_sec *= _MULTI_GPU_SPEED_FACTOR
             if min_speed is not None and tok_per_sec < min_speed:
                 continue
 
@@ -781,6 +784,18 @@ def rank_models(
                 compat.fit_type,
                 tok_per_sec,
             )
+            if compat.uses_multi_gpu:
+                compat.speed_confidence = "low"
+                if tok_per_sec > 0:
+                    compat.speed_range_tok_per_sec = (
+                        round(tok_per_sec * 0.35, 1),
+                        round(tok_per_sec * 2.0, 1),
+                    )
+                compat.speed_notes.append(
+                    "Multi-GPU speed depends on layer/tensor split mode, "
+                    "PCIe/NVLink bandwidth, and backend support; this estimate "
+                    "does not assume ideal scaling."
+                )
             compat.quality_score = _compute_quality_score(
                 model,
                 variant,

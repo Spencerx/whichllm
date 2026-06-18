@@ -785,6 +785,70 @@ def test_unknown_speed_heavy_partial_offload_does_not_top_rank():
         assert heavy.estimated_tok_per_sec == 0.0
 
 
+def test_multi_gpu_speed_confidence_is_low():
+    from whichllm.engine.performance import estimate_tok_per_sec
+
+    model = ModelInfo(
+        id="org/Test-34B-GGUF",
+        family_id="org/Test-34B-GGUF",
+        name="Test-34B-GGUF",
+        parameter_count=34_000_000_000,
+        downloads=1000,
+        likes=100,
+        gguf_variants=[
+            GGUFVariant(
+                filename="test-34b-Q4_K_M.gguf",
+                quant_type="Q4_K_M",
+                file_size_bytes=22 * 1024**3,
+            )
+        ],
+    )
+    hw = HardwareInfo(
+        gpus=[
+            GPUInfo(
+                name="NVIDIA GeForce RTX 4090",
+                vendor="nvidia",
+                vram_bytes=24 * 1024**3,
+                compute_capability=(8, 9),
+                memory_bandwidth_gbps=1008.0,
+            ),
+            GPUInfo(
+                name="NVIDIA GeForce RTX 4090",
+                vendor="nvidia",
+                vram_bytes=24 * 1024**3,
+                compute_capability=(8, 9),
+                memory_bandwidth_gbps=1008.0,
+            ),
+        ],
+        cpu_name="Test CPU",
+        cpu_cores=16,
+        has_avx2=True,
+        ram_bytes=128 * 1024**3,
+        disk_free_bytes=500 * 1024**3,
+        os="linux",
+    )
+
+    results = rank_models(
+        [model],
+        hw,
+        top_n=1,
+        benchmark_scores={"org/Test-34B-GGUF": 70.0},
+    )
+
+    assert results
+    assert results[0].fit_type == "full_gpu"
+    assert results[0].uses_multi_gpu is True
+    assert results[0].speed_confidence == "low"
+    single_gpu_speed = estimate_tok_per_sec(
+        model,
+        model.gguf_variants[0],
+        hw.gpus[0],
+        "full_gpu",
+    )
+    assert results[0].estimated_tok_per_sec == single_gpu_speed * 0.70
+    assert any("Multi-GPU speed depends" in note for note in results[0].speed_notes)
+
+
 def test_benchmark_source_and_confidence_exposed_for_direct():
     model = ModelInfo(
         id="Qwen/Qwen2.5-7B-Instruct",

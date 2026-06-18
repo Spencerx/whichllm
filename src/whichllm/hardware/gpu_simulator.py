@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -188,6 +189,54 @@ def _lookup_dbgpu(name: str) -> GPUSpecification | None:
 
 # Mutable list to pass suggestions from lookup to error message
 _last_suggestions: list[tuple[str, int]] = []
+
+
+def parse_synthetic_gpu_specs(values: Sequence[str] | str) -> list[str]:
+    """Expand CLI GPU simulation values into individual GPU names.
+
+    Accepts repeated options, comma-separated names, and count shorthand such
+    as ``2x RTX 4090``. The returned names are still looked up by
+    ``create_synthetic_gpu`` so existing fuzzy matching and aliases stay in
+    one place.
+    """
+    raw_values = [values] if isinstance(values, str) else list(values)
+    gpu_names: list[str] = []
+
+    for raw in raw_values:
+        for part in raw.split(","):
+            spec = part.strip()
+            if not spec:
+                raise ValueError("Empty GPU entry in --gpu.")
+
+            count_match = re.match(r"^(\d+)\s*x\s+(.+)$", spec, re.IGNORECASE)
+            if count_match:
+                count = int(count_match.group(1))
+                name = count_match.group(2).strip()
+                if count < 1:
+                    raise ValueError("GPU count must be at least 1.")
+                if not name:
+                    raise ValueError("GPU count shorthand requires a GPU name.")
+                gpu_names.extend([name] * count)
+            else:
+                gpu_names.append(spec)
+
+    if not gpu_names:
+        raise ValueError("At least one GPU must be specified.")
+    return gpu_names
+
+
+def create_synthetic_gpus(
+    values: Sequence[str] | str,
+    vram_override_gb: float | None = None,
+) -> list[GPUInfo]:
+    """Create one or more synthetic GPUs from CLI-style values."""
+    names = parse_synthetic_gpu_specs(values)
+    if vram_override_gb is not None and len(names) != 1:
+        raise ValueError(
+            "--vram currently supports exactly one simulated GPU. "
+            "For multi-GPU simulation, specify known GPU names and omit --vram."
+        )
+    return [create_synthetic_gpu(name, vram_override_gb) for name in names]
 
 
 def create_synthetic_gpu(name: str, vram_override_gb: float | None = None) -> GPUInfo:

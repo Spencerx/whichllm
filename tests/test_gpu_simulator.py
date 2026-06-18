@@ -3,7 +3,46 @@
 import pytest
 
 from whichllm.constants import _GiB
-from whichllm.hardware.gpu_simulator import create_synthetic_gpu
+from whichllm.hardware.gpu_simulator import (
+    create_synthetic_gpu,
+    create_synthetic_gpus,
+    parse_synthetic_gpu_specs,
+)
+
+
+class TestMultiGPUSpecParsing:
+    def test_comma_separated_gpu_specs(self):
+        assert parse_synthetic_gpu_specs(["RTX 4090, RTX 3090"]) == [
+            "RTX 4090",
+            "RTX 3090",
+        ]
+
+    def test_repeated_gpu_specs(self):
+        assert parse_synthetic_gpu_specs(["RTX 4090", "RTX 3090"]) == [
+            "RTX 4090",
+            "RTX 3090",
+        ]
+
+    def test_count_shorthand(self):
+        assert parse_synthetic_gpu_specs(["2x RTX 4090, 1x RTX 3090"]) == [
+            "RTX 4090",
+            "RTX 4090",
+            "RTX 3090",
+        ]
+
+    def test_empty_entry_raises(self):
+        with pytest.raises(ValueError, match="Empty GPU entry"):
+            parse_synthetic_gpu_specs(["RTX 4090,"])
+
+    def test_create_synthetic_gpus_expands_count(self):
+        gpus = create_synthetic_gpus(["2x RTX 4090"])
+        assert len(gpus) == 2
+        assert all(gpu.vendor == "nvidia" for gpu in gpus)
+        assert all(gpu.vram_bytes == 24 * _GiB for gpu in gpus)
+
+    def test_multi_gpu_vram_override_is_rejected(self):
+        with pytest.raises(ValueError, match="exactly one simulated GPU"):
+            create_synthetic_gpus(["2x RTX 4090"], vram_override_gb=24)
 
 
 class TestKnownGPULookup:

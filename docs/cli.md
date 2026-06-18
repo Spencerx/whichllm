@@ -28,7 +28,7 @@ Common options:
 | `--json` | Print machine-readable JSON |
 | `--refresh` | Ignore caches and fetch models/benchmarks again |
 | `--cpu-only` | Ignore GPUs and rank for CPU-only use |
-| `--gpu` | Simulate a GPU by name |
+| `--gpu` | Simulate GPU(s) by name. Accepts repeated flags, comma-separated values, and count shorthand |
 | `--vram` | Override simulated GPU VRAM in GB. Requires `--gpu` |
 | `--version` | Print the installed package version |
 
@@ -38,6 +38,9 @@ Examples:
 whichllm
 whichllm --gpu "RTX 4090"
 whichllm --gpu "RTX 5060 Ti" --vram 16
+whichllm --gpu "2x RTX 4090"
+whichllm --gpu "RTX 4090" --gpu "RTX 3090"
+whichllm --gpu "RTX 4090, RTX 3090"
 whichllm --profile coding --top 5
 whichllm --context-length 64k
 whichllm --evidence strict
@@ -70,6 +73,7 @@ whichllm hardware
 whichllm hardware --cpu-only
 whichllm hardware --gpu "Apple M3 Max"
 whichllm hardware --gpu "RTX 3060" --vram 12
+whichllm hardware --gpu "4x RTX 4090"
 ```
 
 ## `plan`
