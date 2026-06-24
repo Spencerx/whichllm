@@ -861,16 +861,83 @@ def _load_models(refresh: bool, include_vision: bool = True):
         sys.exit(1)
 
 
+_SIZE_TOKEN_RE = re.compile(r"^(\d+(?:\.\d+)?)([bm])$", re.IGNORECASE)
+
+
+def _parse_size_tokens(
+    terms: list[str],
+) -> tuple[list[str], float | None]:
+    """Split query terms into non-size terms and an optional size in billions.
+
+    Returns (remaining_terms, size_b) where size_b is None if no size token
+    was found.  Only the first size token is used; subsequent size tokens are
+    kept as plain text terms.  Handles 'b' (billions) and 'm' (millions).
+    """
+    remaining = []
+    size_b: float | None = None
+    for t in terms:
+        m = _SIZE_TOKEN_RE.match(t)
+        if m and size_b is None:
+            value = float(m.group(1))
+            if value <= 0:
+                remaining.append(t)
+                continue
+            unit = m.group(2).lower()
+            size_b = value if unit == "b" else value / 1000.0
+        else:
+            remaining.append(t)
+    return remaining, size_b
+
+
+_ID_SIZE_RE = re.compile(r"(?:^|[-_/])(\d+(?:\.\d+)?)(b|m)(?:[-_.]|$)", re.IGNORECASE)
+
+
+def _extract_id_size_b(model_id: str) -> float | None:
+    """Extract the size label from a model ID string, in billions.
+
+    Scans for patterns like '7B', '1.7B', '500M' at word boundaries in the
+    model ID.  Returns the first match converted to billions, or None.
+    """
+    for m in _ID_SIZE_RE.finditer(model_id):
+        value = float(m.group(1))
+        if value <= 0:
+            continue
+        unit = m.group(2).lower()
+        return value if unit == "b" else value / 1000.0
+    return None
+
+
+def _size_compatible(model: ModelInfo, size_b: float) -> bool:
+    """Check whether a model's parameter count is compatible with a query size.
+
+    Uses a tolerance band of [0.7x, 1.5x] to accommodate rounding differences
+    (e.g. a 7B query matching a model with 7.6B actual parameters) while
+    rejecting adjacent model sizes (e.g. 7B vs 4B or 12B).
+    """
+    if model.parameter_count <= 0:
+        return True
+    actual_b = model.parameter_count / 1e9
+    ratio = actual_b / size_b
+    return 0.7 <= ratio <= 1.5
+
+
 def _search_model(models: list, model_name: str):
     """Search for a model by name/ID. Returns single model or exits."""
     query_lower = model_name.lower()
     terms = query_lower.split()
+    size_b = None
 
     matches = [m for m in models if m.id.lower() == query_lower]
     if not matches:
         matches = [m for m in models if m.id.lower().endswith("/" + query_lower)]
     if not matches:
-        matches = [m for m in models if all(t in m.id.lower() for t in terms)]
+        text_terms, size_b = _parse_size_tokens(terms)
+        matches = [
+            m
+            for m in models
+            if all(t in m.id.lower() for t in text_terms)
+            and (size_b is None or _size_compatible(m, size_b))
+        ]
 
     if not matches:
         console.print(f"[red]No model found matching '{model_name}'.[/]")
@@ -887,7 +954,27 @@ def _search_model(models: list, model_name: str):
                 console.print(f"  • {m.id} ({p})")
         raise typer.Exit(code=1)
 
-    matches.sort(key=lambda m: m.downloads, reverse=True)
+    if size_b is not None:
+
+        def _sort_key(m: ModelInfo) -> tuple:
+            id_size = _extract_id_size_b(m.id)
+            has_id_size = id_size is not None
+            id_dist = abs(id_size - size_b) if has_id_size else float("inf")
+            pc_dist = (
+                abs(m.parameter_count / 1e9 - size_b)
+                if m.parameter_count > 0
+                else float("inf")
+            )
+            return (
+                0 if (has_id_size or m.parameter_count > 0) else 1,
+                id_dist,
+                pc_dist,
+                -m.downloads,
+            )
+
+        matches.sort(key=_sort_key)
+    else:
+        matches.sort(key=lambda m: m.downloads, reverse=True)
     model = matches[0]
     if len(matches) > 1:
         console.print(f"[dim]Found {len(matches)} matches, using: {model.id}[/]")
