@@ -44,6 +44,27 @@ brew install andyyyy64/whichllm/whichllm
 pip install whichllm
 ```
 
+## Want a safer pick?
+
+By default, whichllm is ambitious. It ranks the best model that looks runnable
+on your machine, including partial RAM offload and near-edge VRAM fits when
+they seem usable.
+
+If you want a more comfortable LM Studio-style recommendation, start with:
+
+```bash
+uvx whichllm@latest --gpu-only --speed usable --vram-headroom 1GB
+```
+
+This keeps only models that fit fully in GPU VRAM, filters out slow estimates,
+and leaves extra VRAM for runtime overhead.
+
+If LM Studio still says the model is slightly too large, increase the headroom:
+
+```bash
+uvx whichllm@latest --gpu-only --speed usable --vram-headroom 1.5GB
+```
+
 ## Common workflows
 
 After install, run `whichllm` directly. For one-off runs, replace `whichllm`

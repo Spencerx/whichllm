@@ -40,6 +40,26 @@ brew install andyyyy64/whichllm/whichllm
 pip install whichllm
 ```
 
+## 余裕を持って動く候補だけ見たい場合
+
+whichllm のデフォルトは少し攻めた推薦です。RAMへのpartial offloadや、
+VRAMぎりぎりの候補も、動きそうならランキングに入れます。
+
+LM Studioなどで余裕を持って動かしたい場合は、まずこれを使ってください。
+
+```bash
+uvx whichllm@latest --gpu-only --speed usable --vram-headroom 1GB
+```
+
+GPUのVRAMに全部載る候補だけに絞り、遅い推定速度の候補を外し、実行時の
+余白も1GB残します。
+
+それでもLM Studio側で少しはみ出す場合は、余白を増やします。
+
+```bash
+uvx whichllm@latest --gpu-only --speed usable --vram-headroom 1.5GB
+```
+
 ### 開発用
 
 ```bash
