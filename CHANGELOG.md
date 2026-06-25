@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.5.13] - 2026-06-25
+
+### Added
+
+- Added `HF_ENDPOINT` support for Hugging Face model metadata fetches, so users
+  behind a mirror can point whichllm at a compatible Hub endpoint. (#128, #131)
+- Added manual detected-GPU overrides for usable VRAM and bandwidth, which helps
+  iGPU and unified-memory systems where automatic detection is too conservative.
+  (#132, #133)
+- README now points users toward safer first-run flags when they want
+  full-GPU, usable-speed recommendations with extra VRAM headroom.
+
+### Fixed
+
+- Search terms such as `7B`, `0.5B`, and `500M` now match model parameter size
+  instead of plain substrings, so `qwen 7b` no longer returns `1.7B` or
+  `30B-A3B` models by accident. (#107, #126)
+- GGUF sizing now treats FP16 and ternary `TQ1_0` / `TQ2_0` quant types
+  correctly, avoiding underestimates for those files. (#125)
+
 ## [0.5.12] - 2026-06-18
 
 ### Added
